@@ -1,31 +1,26 @@
 #-*- coding: utf-8 -*-
 import warnings
+import pprint
 import shutil
 import subprocess
 import time
 import urllib
+import json
 import selenium
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException
+from openpyxl import Workbook
 warnings.filterwarnings('ignore')
 
-client_id = ""
-client_secret = ""
+client_id = "RD1oPcv8ybcFOPSXm2xm"
+client_secret = "asZCz3L4qr"
 top500_dic = dict()
 review_cnt_list = []
-
-
-def writeExcel():
-    from openpyxl import Workbook
-    wb = Workbook()
-    ws = wb.create_sheet('keyword')
-    wb.remove_sheet(wb['Sheet'])
-    ws.append((['No', '인기검색어']))
-    wb.save('C:\\Users\\user\\.virtualenvs\\naverdatalabtop500.xlsx')
-    wb.close()
-
+apiitem_list = []
+item_list = []
 
 def searchKeyword():    
     for k, v in top500_dic.items():
@@ -38,78 +33,193 @@ def searchKeyword():
         response = urllib.request.urlopen(request)
         rescode = response.getcode()
         if(rescode==200):
-            response_body = response.read()
-            print(response_body.decode('utf-8'))
+            res_body = response.read()
+            json_obj = json.loads(res_body.decode('utf-8'))
+            apiitem_list = json_obj["items"]
+            print(apiitem_list)
         else:
             print("Error Code:" + rescode)
         return
 
 
-
 def getReviewCnt():
-    options = Options()
-    options.binary_location= 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    driver = webdriver.Chrome(executable_path='C:\\Users\\user\\Downloads\\chromedriver_win32\\chromedriver.exe', chrome_options = options) ## 크롬 드라이버가 위치한 경로 대입 필요
-
+    wb = Workbook()
     for k, v in top500_dic.items():
         encText = urllib.parse.quote(v)
-        driver.get('https://https://search.shopping.naver.com/search/all?query='+ encText)
+        driver.get('https://search.shopping.naver.com/search/all?query='+ encText)
         time.sleep(1)
+        body = driver.find_element(By.TAG_NAME, 'body')
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(1.5)
 
-        for i in range(1, 41) :
-            path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[5]/a[1]/em'        
-            rev_cnt = driver.find_element(By.XPATH, path).text
-            review_cnt_list.append(rev_cnt)        
-        print(review_cnt_list)
-        return
+        mall_list = driver.find_elements(By.CSS_SELECTOR, ".basicList_item__0T9JD")
+        #mall_list = driver.find_elements(By.CSS_SELECTOR, ".basicList_item__0T9JD:not(.ad)")
+        ws = wb.create_sheet(v)
+        if 'Sheet' in wb.sheetnames:
+            wb.remove_sheet(wb['Sheet'])
+        ws.append((['상품명', '가격', '등록일', '리뷰', '구매건수', '스토어링크']))
+
+        for i in range(1, len(mall_list)+1): 
+            itemName_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[1]/a' # 상품명
+            #itemPrice_path = f'//*[@id="content"]/div[1]/div[2]/div/div[5]/div/div/div[2]/div[2]/strong/span/span'
+            # itemPrice_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[2]/strong/span/span/span[2]'
+            itemDate_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[5]/span[1]' # 상품등록일
+            rev_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[5]/a[1]/em' # 리뷰수
+            buy_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[5]/a[2]/em' # 구매건수
+            itemLink_path = f'//*[@id="content"]/div[1]/div[2]/div/div[{i}]/div/div/div[2]/div[1]/a' # 상품link
+            li = []
+            try:
+                itemName = driver.find_element(By.XPATH, itemName_path).text
+                li.append(itemName)
+            except NoSuchElementException:
+                pass
+            try:#<span class="price_num__S2p_v" data-testid="SEARCH_PRODUCT_PRICE">27,900원</span>
+                itemPrice = mall_list[i-1].find_element(By.CSS_SELECTOR, ".price_num__S2p_v").text
+                li.append(itemPrice)
+            except NoSuchElementException:
+                pass
+            try:
+                itemDate = driver.find_element(By.XPATH, itemDate_path).text
+                li.append(itemDate.split()[1])
+            except NoSuchElementException:
+                pass
+            try:
+                rev_cnt = driver.find_element(By.XPATH, rev_path).text
+                li.append(rev_cnt)
+            except NoSuchElementException:
+                li.append('0')
+                pass
+                # print("No review")
+            try:
+                buy_cnt = driver.find_element(By.XPATH, buy_path).text
+                li.append(buy_cnt)
+            except NoSuchElementException:
+                li.append('0')
+                pass
+            try:
+                itemLink = driver.find_element(By.XPATH, itemLink_path).get_attribute('href')
+                li.append(itemLink)
+            except NoSuchElementException:
+                pass
+            # item_list.append(li)
+            ws.append(li)
+    wb.save('C:\\Users\\user\\.virtualenvs\\naverdatalabtop500.xlsx')
+    wb.close()
+        # pprint.pprint(item_list)
+    return
+    """
+        items = driver.find_elements(By.CSS_SELECTOR, ".basicList_item__0T9JD")
+        for item in items:
+            li = []
+            try:
+                itemName = item.find_element(By.CSS_SELECTOR, ".basicList_link__JLQJf").text
+                li.append(itemName)
+            except NoSuchElementException:
+                print("No itemName")
+                pass
+            try:
+                itemPrice = item.find_element(By.CSS_SELECTOR, ".price_num__S2p_v").text
+                li.append(itemPrice)
+            except NoSuchElementException:
+                print("No price")
+                pass
+            try:
+                itemDate = item.find_element(By.CSS_SELECTOR, ".basicList_etc__LSkN_").text
+                li.append(itemDate.split(' ')[-1])
+            except NoSuchElementException:
+                print("No date")
+                pass
+            try:
+                revbuys = item.find_elements(By.CSS_SELECTOR, ".basicList_num__sfz3h")
+                for i in revbuys:
+                    li.append(i.find_element(By.CSS_SELECTOR, ".basicList_num__sfz3h").text)
+            except NoSuchElementException:
+                print("No review")
+                pass
+            # try:
+            #     buy_cnt = item.find_element(By.CSS_SELECTOR, ".basicList_num__sfz3h").text
+            #     li.append(buy_cnt)
+            # except NoSuchElementException:
+            #     print("No link")
+            #     pass
+            item_list.append(li)
+            """
+        # while True:
+        #     pass
+        # review_cnt_list.append(rev_cnt)
+        # print(review_cnt_list)
+        
+def writeExcel():
+    wb = Workbook()
+    for i in top500_dic:
+        ws = wb.create_sheet(top500_dic[i])
+        if 'Sheet' in wb.sheetnames:
+            wb.remove_sheet(wb['Sheet'])
+        ws.append((['상품명', '가격', '등록일', '리뷰', '구매건수', '스토어링크']))
+        for i in item_list:
+            ws.append(i)
+    wb.save('C:\\Users\\user\\.virtualenvs\\naverdatalabtop500.xlsx')
+    wb.close()
 
 
-def getRankKeyword():
-    options = Options()
-    options.binary_location= 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+# def getRankKeyword():
+options = Options()
+options.add_experimental_option("excludeSwitches", ["enable-logging"]) #크롬 종료되지 않는 상태 유지
 
-    driver = webdriver.Chrome(executable_path='C:\\Users\\user\\Downloads\\chromedriver_win32\\chromedriver.exe', chrome_options = options) ## 크롬 드라이버가 위치한 경로 대입 필요
-    driver.get('https://datalab.naver.com/shoppingInsight/sCategory.naver')
+options.binary_location= 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 
-    time.sleep(1)
+driver = webdriver.Chrome(executable_path='C:\\Users\\user\\Downloads\\chromedriver_win32\\chromedriver.exe', chrome_options = options) ## 크롬 드라이버가 위치한 경로 대입 필요
+driver.get('https://datalab.naver.com/shoppingInsight/sCategory.naver')
 
-    driver.find_element(By.XPATH, '//*[@id="18_device_0"]').click() #기기별 전체 클릭
-    #time.sleep(0.5)
-    driver.find_element(By.XPATH, '//*[@id="19_gender_0"]').click() #성별 전체 클릭
-    #time.sleep(0.5)
-    driver.find_element(By.XPATH, '//*[@id="20_age_0"]').click() #연령별 전체 클릭
-    #time.sleep(0.5)
+time.sleep(1)
 
-    driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[1]/span').click() #분야 클릭
-    #time.sleep(0.5)
+# driver.find_element(By.XPATH, '//*[@id="18_device_0"]').click() #기기별 전체 클릭
+# time.sleep(0.5)
+# driver.find_element(By.XPATH, '//*[@id="19_gender_0"]').click() #성별 전체 클릭
+# time.sleep(0.5)
+# driver.find_element(By.XPATH, '//*[@id="20_age_0"]').click() #연령별 전체 클릭
+# time.sleep(0.5)
 
-    driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[1]/ul/li[4]/a').click() #디지털/가전 클릭
-    #time.sleep(0.5)
+driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[1]/span').click() #분야 클릭
+time.sleep(0.5)
 
-    driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/a').click() #조회하기 클릭
-    #time.sleep(1)
+driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[1]/ul/li[1]/a').click() #패션의류 클릭
+time.sleep(0.5)
+
+# driver.find_element(By.XPATH, f'//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[2]/span').click() # 2분류 클릭
+# time.sleep(0.5)
+
+# driver.find_element(By.XPATH, f'//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[2]/ul/li[3]/a').click() # 남성의류 클릭
+# time.sleep(0.5)
+
+# driver.find_element(By.XPATH, f'//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[3]/span').click() # 3분류 클릭
+# time.sleep(0.5)
+
+# driver.find_element(By.XPATH, f'//*[@id="content"]/div[2]/div/div[1]/div/div/div[1]/div/div[3]/ul/li[1]/a').click() # 니트/스웨터 클릭
+# time.sleep(0.5)
+
+driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[1]/div/a').click() #조회하기 클릭
+time.sleep(1)
+
+for i in range(0, 1) : # 25페이지까지
+    for j in range(1, 21) : # 20개씩
+        path = f'//*[@id="content"]/div[2]/div/div[2]/div[2]/div/div/div[1]/ul/li[{j}]/a'
+        result = driver.find_element(By.XPATH, path).text
+        top500_dic[result.split('\n')[0]] = result.split('\n')[1]
+        
+        # time.sleep(0.1)
+        # ws.append(result.split('\n'))
     
-    for i in range(0, 2) :
-        for j in range(1, 21) :
-            path = f'//*[@id="content"]/div[2]/div/div[2]/div[2]/div/div/div[1]/ul/li[{j}]/a'
-            result = driver.find_element(By.XPATH, path).text
-            top500_dic[result.split('\n')[0]] = result.split('\n')[1]
-            # print(result.split('\n'))
-            # time.sleep(0.1)
-            # ws.append(result.split('\n'))
-        driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[2]/div[2]/div/div/div[2]/div/a[2]').click()
-        time.sleep(0.1)
-    # print(top500_dic)
+    # driver.find_element(By.XPATH, '//*[@id="content"]/div[2]/div/div[2]/div[2]/div/div/div[2]/div/a[2]').click()
+    time.sleep(0.1)
+# print(top500_dic)
+# driver.close()
+# driver.quit()
+print("네이버 데이터랩 Top 500 키워드 뽑기 완료")
 
-    driver.close()
-    driver.quit()
-
-
-
-
-
-if __name__ == '__main__':
-    getRankKeyword()
-    print("네이버 데이터랩 Top 500 키워드 뽑기 완료")
-    searchKeyword()
-    getReviewCnt()
+# searchKeyword()
+getReviewCnt()
+# writeExcel()
+# if __name__ == '__main__':
+    # getRankKeyword()
+    
